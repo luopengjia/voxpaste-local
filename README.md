@@ -1,21 +1,56 @@
 # VoxPaste Local
 
-VoxPaste Local is a local-first macOS voice input utility:
+VoxPaste Local is a local-first macOS voice input layer for fast writing:
 
 ```text
 hold a trigger key/button -> record speech -> Whisper transcription -> optional local LLM cleanup -> paste into the active cursor
 ```
 
-It is designed for people who write a lot in chat tools, notes, browsers, and editors, and want fast voice input without sending audio to a cloud API.
+It is designed for people who write across chat apps, notes, browsers, and editors, and want a more controllable alternative to built-in dictation.
+
+The core idea is simple: voice input should behave like a universal text shortcut. Hold a key or mouse side button, speak, release, and the cleaned text appears exactly where the cursor is.
+
+## Why Not Just Use macOS Dictation?
+
+Built-in dictation is convenient, but it is optimized for general-purpose speech input. In real desktop writing, the friction often appears in different places:
+
+- Mixed Chinese-English writing, especially product names, model names, commands, code terms, and abbreviations.
+- Spoken drafts that contain filler words, repeated connectors, and unclear punctuation.
+- Switching between WeChat, browsers, note apps, editors, and forms where the user wants the same input behavior everywhere.
+- Lack of control over the transcription backend, post-processing rules, output style, and trigger behavior.
+- Privacy-sensitive workflows where sending raw audio to a cloud service is undesirable.
+
+VoxPaste treats dictation as a workflow problem, not only a speech recognition problem. The product value comes from combining local transcription, explicit hold-to-record interaction, deterministic text cleanup, optional local LLM polishing, and paste automation into one small loop.
+
+| Need | Built-in dictation | VoxPaste Local |
+| --- | --- | --- |
+| Quick basic dictation | Strong | Supported |
+| Mouse side-button hold-to-record | Not the core interaction | Built around it |
+| Local Whisper backend | Not configurable | Uses `mlx-whisper` on Apple Silicon |
+| Mixed Chinese-English tuning | Limited user control | Can use a Chinese language hint or auto-detect |
+| Filler-word and punctuation cleanup | Opaque | Rule-based by default, local LLM optional |
+| Output style control | Limited | `raw`, `polished`, or `structured` |
+| Works across apps | Yes | Yes, by clipboard + paste automation |
+
+This project does not claim to beat native dictation in every situation. It targets a narrower workflow: fast, repeatable, local voice-to-paste for users who care about control, mixed-language text, and post-processing.
 
 ## What It Does
 
 - Records while you hold a keyboard key or mouse side button.
 - Transcribes audio with `mlx-whisper` on Apple Silicon.
-- Optionally cleans spoken text with a local LM Studio model.
-- Can output raw transcripts, polished writing, or structured Markdown.
+- Cleans spoken text with local rules for filler words, spacing, and punctuation.
+- Optionally uses a local LM Studio model for higher-quality polishing or structuring.
+- Can output raw transcripts, polished writing, or structured Markdown notes.
 - Copies the final text to the clipboard and pastes it into the current cursor.
 - Keeps configuration in `config.local.json`, so the script can stay clean.
+
+## Product Principles
+
+- Local first: audio can stay on the user's machine.
+- Low friction: hold, speak, release, paste.
+- Cross-app by default: the output goes into the active cursor, not a dedicated editor.
+- Deterministic when possible: simple cleanup should not require a large language model.
+- Optional intelligence: use a local LLM only when the user wants deeper rewriting or structured notes.
 
 ## Platform
 
@@ -65,7 +100,7 @@ Common options:
 | `trigger_mouse_button` | Mouse trigger. Supports `side`, `back`, `forward`, `mouse4`, `mouse5`, `middle`, `unknown`, `x1`, `x2` | `side` |
 | `output_mode` | Output mode: `raw`, `polished`, or `structured` | `polished` |
 | `structured_template` | Markdown template for structured output: `summary_action_items`, `meeting_notes`, or `jd_analysis` | `summary_action_items` |
-| `language` | Whisper language hint; use `null` for auto-detect | `zh` |
+| `language` | Whisper language hint. Use `zh` for mostly Chinese speech; use `null` to let Whisper auto-detect, which can be useful for mixed Chinese-English speech | `zh` |
 | `use_local_llm` | Whether to call LM Studio for polished or structured output | `false` |
 | `lm_studio_url` | LM Studio OpenAI-compatible endpoint | `http://localhost:1234/v1` |
 | `llm_model` | Model name loaded in LM Studio | `local-model` |
@@ -90,12 +125,20 @@ The rule-based fallback is intentionally conservative. It formats the transcript
 
 Older configs that still use `use_llm_polish` are supported as a backwards-compatible alias.
 
+### Local Cleanup Example
+
 You can test the local speech cleanup path without recording audio:
 
 ```bash
 python voxpaste.py \
   --output-mode polished \
   --format-text "嗯那个就是我觉得这个软件有两个问题然后第一个是速度慢第二个是界面乱"
+```
+
+Example output:
+
+```text
+我觉得这个软件有两个问题：第一个是速度慢，第二个是界面乱。
 ```
 
 You can test the local rule-based structured path without recording audio:
@@ -139,6 +182,28 @@ Then:
 3. Release.
 4. The transcript is pasted into the current cursor.
 
+## Mixed Chinese-English Usage
+
+For mostly Chinese speech, keep:
+
+```json
+"language": "zh"
+```
+
+For heavier mixed Chinese-English speech, such as product names, model names, commands, and code terms, try:
+
+```json
+"language": null
+```
+
+This removes the fixed language hint and lets Whisper detect the speech more freely. The best setting depends on the microphone, speaking style, model, and the ratio of Chinese to English terms.
+
+Examples of the target use cases:
+
+- "我想把 output mode 改成 polished，然后默认 trigger mouse button 用 side。"
+- "这个 JD 里面提到 prompt engineering、SFT 和 RLHF，我想提炼成简历关键词。"
+- "Next step 是录一个 demo video，然后把 GitHub README 优化一下。"
+
 ## Helper Scripts
 
 Use these when choosing a trigger:
@@ -152,9 +217,27 @@ They print the `pynput` key/button names recognized by your machine. On macOS, s
 
 ## Why This Project Exists
 
-Most voice input workflows either depend on cloud services or are too heavy for quick everyday writing. This project explores a smaller local workflow: local transcription, optional local text cleanup, and direct paste into any app.
+Most voice input tools focus on recognition accuracy alone. VoxPaste explores a different question: what would voice input look like if it were designed as a desktop productivity layer?
 
-The core product idea is not "another dictation app"; it is a low-friction input layer for people who already live inside editors, browsers, chat tools, and note apps.
+The answer is a small but complete loop:
+
+```text
+capture intent quickly
+  -> transcribe locally
+  -> clean speech into usable writing
+  -> paste into the current app
+```
+
+The project is intentionally small. Its value is not in building another full dictation app, but in proving a product hypothesis: for frequent desktop writing, the combination of local AI, hardware-triggered recording, and text post-processing can be more useful than raw transcription alone.
+
+## Demo Story
+
+A practical demo should compare the same workflow in two ways:
+
+1. Use native dictation to input a mixed Chinese-English sentence with product names or code terms.
+2. Use VoxPaste with a mouse side button to record the same sentence and paste cleaned text into the same app.
+
+The point of the demo is not to claim universal accuracy superiority. The point is to show the product difference: VoxPaste is configurable, local-first, side-button driven, and has a post-processing layer that turns spoken drafts into cleaner written text.
 
 ## Limitations
 
@@ -162,7 +245,8 @@ The core product idea is not "another dictation app"; it is a low-friction input
 - MLX/Metal can fail in unsupported or headless environments.
 - Paste automation depends on macOS Accessibility permissions.
 - LM Studio cleanup is optional and only works when LM Studio is running with a loaded model.
-- Rule-based structured output is basic; high-quality structuring requires a local LLM.
+- Rule-based cleanup is conservative. It improves common filler words and punctuation, but it does not deeply rewrite or infer missing meaning.
+- Rule-based structured output is basic; high-quality semantic structuring requires a local LLM.
 - The script is a local utility, not a signed macOS app.
 
 ## Project Structure
