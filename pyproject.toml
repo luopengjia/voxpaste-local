@@ -1,0 +1,20 @@
+[project]
+name = "voxpaste-local"
+version = "0.1.0"
+description = "Local-first macOS voice-to-paste utility using MLX Whisper and optional LM Studio cleanup."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Luopengjia" }]
+dependencies = [
+  "mlx-whisper",
+  "sounddevice",
+  "numpy",
+  "pyperclip",
+  "pynput",
+  "openai",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

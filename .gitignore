@@ -1,0 +1,22 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Local user config and runtime artifacts
+config.local.json
+*.wav
+*.m4a
+*.mp3
+*.log
+
+# Build / package output
+build/
+dist/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/

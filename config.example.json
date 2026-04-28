@@ -1,0 +1,12 @@
+{
+  "whisper_model": "mlx-community/whisper-large-v3-turbo",
+  "lm_studio_url": "http://localhost:1234/v1",
+  "llm_model": "local-model",
+  "use_llm_polish": false,
+  "sample_rate": 16000,
+  "trigger_key": "alt_r",
+  "trigger_mouse_button": "middle",
+  "language": "zh",
+  "hold_threshold_sec": 0.3,
+  "paste_delay_sec": 0.1
+}
