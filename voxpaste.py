@@ -401,27 +401,28 @@ def parse_mouse_button(mouse_module: Any, value: Any) -> Any:
 
 
 def structure_without_llm(text: str, template: str) -> str:
-    sentences = split_sentences(text)
-    key_points = sentences[:6] or [text.strip()]
+    cleaned = clean_speech_without_llm(text)
+    sentences = split_sentences(cleaned)
+    key_points = sentences[:6] or [cleaned]
     action_items = find_action_items(sentences)
 
     if template == "meeting_notes":
         sections = [
-            ("Summary", [text.strip()]),
+            ("Summary", [cleaned]),
             ("Discussion Notes", key_points),
             ("Decisions", ["None"]),
             ("Action Items", action_items or ["None"]),
         ]
     elif template == "jd_analysis":
         sections = [
-            ("Role Summary", [text.strip()]),
+            ("Role Summary", [cleaned]),
             ("Requirements", key_points),
             ("Signals To Highlight", ["None"]),
             ("Questions To Clarify", ["None"]),
         ]
     else:
         sections = [
-            ("Summary", [text.strip()]),
+            ("Summary", [cleaned]),
             ("Key Points", key_points),
             ("Action Items", action_items or ["None"]),
         ]
@@ -458,10 +459,13 @@ def is_chinese_text(text: str, language: Any = None) -> bool:
 def clean_chinese_speech(text: str) -> str:
     text = normalize_chinese_punctuation(text)
     text = remove_chinese_fillers(text)
+    text = normalize_chinese_speech_markers(text)
     text = add_chinese_phrase_commas(text)
+    text = add_chinese_sentence_breaks(text)
     text = re.sub(r"[，,]\s*[，,]+", "，", text)
     text = re.sub(r"\s*([，。！？；：])\s*", r"\1", text)
     text = re.sub(r"([。！？；：])，", r"\1", text)
+    text = re.sub(r"：，", "：", text)
     if text and text[-1] not in "。！？；：":
         text += "。"
     return text
@@ -489,18 +493,31 @@ def remove_chinese_fillers(text: str) -> str:
         r"嗯+",
         r"呃+",
         r"额+",
-        r"那个",
-        r"这个",
         r"就是",
     )
     filler_group = "|".join(fillers)
     previous = None
     while previous != text:
         previous = text
+        text = re.sub(rf"{boundary}(?:那个|这个)(?=就是|嗯|呃|额)", r"\1", text)
         text = re.sub(rf"{boundary}(?:{filler_group})(?:[，\s]*)", r"\1", text)
     text = re.sub(r"(然后)(?:，?然后)+", r"\1", text)
-    text = re.sub(r"(，)?(对吧|你知道吧|是不是)([。！？；：]|$)", r"\3", text)
+    text = re.sub(
+        r"(?<=[\u4e00-\u9fff])的话(?=[，。！？；：]|$|第[一二三四五六七八九十]|首先|其次|最后|下一步|接下来)",
+        "",
+        text,
+    )
+    text = re.sub(r"(，)?(对吧|你知道吧|是不是|啊|呀|吧|呢)([。！？；：]|$)", r"\3", text)
     return text.strip("， ")
+
+
+def normalize_chinese_speech_markers(text: str) -> str:
+    text = re.sub(r"然后，?(?:我觉得|我感觉)?，?(下一步|接下来)", r"\1", text)
+    text = re.sub(r"然后，?(下一步|接下来)", r"\1", text)
+    text = re.sub(r"然后，?(第一|第二|第三|第四|第五)", r"\1", text)
+    text = re.sub(r"(我觉得|我感觉)，?(下一步|接下来)", r"\2", text)
+    text = re.sub(r"(?<![\u4e00-\u9fff])(其实|大概)(?=[\u4e00-\u9fff])", "", text)
+    return text
 
 
 def add_chinese_phrase_commas(text: str) -> str:
@@ -512,6 +529,11 @@ def add_chinese_phrase_commas(text: str) -> str:
         "然后",
         "不过",
         "而且",
+        "首先",
+        "其次",
+        "最后",
+        "同时",
+        "比如",
         "第一",
         "第二",
         "第三",
@@ -520,6 +542,16 @@ def add_chinese_phrase_commas(text: str) -> str:
     )
     for marker in markers:
         text = re.sub(rf"(?<!^)(?<![，。！？；：\n])({marker})", rf"，\1", text)
+    return text
+
+
+def add_chinese_sentence_breaks(text: str) -> str:
+    list_intro = r"((?:一|二|两|三|四|五|\d+)(?:个|件)?(?:问题|事情|事|部分|点|方向|任务|步骤|原因|目标))"
+    text = re.sub(rf"{list_intro}，?(第一)", r"\1：\2", text)
+
+    end_markers = ("下一步", "接下来", "最后")
+    for marker in end_markers:
+        text = re.sub(rf"(?<!^)(?<![。！？；：\n])，?({marker})", rf"。\1", text)
     return text
 
 
