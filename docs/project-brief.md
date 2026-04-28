@@ -34,7 +34,7 @@ hold trigger key / mouse side button
 - Designed a complete local voice-input loop from recording to transcription, optional polishing, clipboard update, and paste automation.
 - Refactored a personal script into a public GitHub project with external configuration, a README, license, `.gitignore`, and environment checks.
 - Implemented hold-to-record triggers for both keyboard keys and mouse buttons, including side-button aliases such as `side`, `mouse4`, and `mouse5`.
-- Added optional output modes for raw transcripts, polished writing, and structured Markdown.
+- Added optional output modes for raw transcripts, local rule-based speech cleanup, and structured Markdown.
 - Added helper scripts to inspect keyboard and mouse trigger names recognized by the local `pynput` backend.
 - Added lazy imports and a `--check` command that verifies core dependencies in child processes, reducing crash risk in unsupported MLX/Metal environments.
 
@@ -43,7 +43,7 @@ hold trigger key / mouse side button
 - Local-first: audio can stay on the user's machine.
 - Low-friction: hold, speak, release, paste.
 - Works across apps: the output lands in the current cursor instead of being locked inside one editor.
-- Flexible output: users can choose raw transcription, local LLM cleanup, or structured Markdown notes.
+- Flexible output: users can choose raw transcription, local punctuation/filler cleanup, local LLM cleanup, or structured Markdown notes.
 - Practical AI integration: the model is embedded into a real input workflow, not just called as a standalone demo.
 
 ## Resume Version
@@ -51,6 +51,6 @@ hold trigger key / mouse side button
 ```text
 VoxPaste Local | Local-first AI voice input utility for macOS
 - Built a local macOS voice-input workflow: hold a keyboard key or mouse side button to record, release to transcribe with MLX Whisper, and automatically paste the result into the active cursor.
-- Added optional output modes for raw transcripts, polished writing, and structured Markdown notes, with local LLM support through LM Studio's OpenAI-compatible API.
+- Added optional output modes for raw transcripts, local rule-based speech cleanup, and structured Markdown notes, with optional local LLM support through LM Studio's OpenAI-compatible API.
 - Refactored a personal automation script into a public GitHub project with external configuration, environment checks, helper scripts, README documentation, and a standard open-source license.
 ```

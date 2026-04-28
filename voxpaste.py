@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import re
 import subprocess
 import sys
 import threading
@@ -261,9 +262,10 @@ class VoxPasteApp:
         raise ValueError(f"unknown output_mode: {mode}")
 
     def polish_with_llm(self, text: str) -> str:
+        language = self.config.get("language")
         if not uses_local_llm(self.config) or len(text) < 5:
-            return text
-        return self.try_local_llm(POLISH_PROMPT, text, "LLM polish") or text
+            return clean_speech_without_llm(text, language)
+        return self.try_local_llm(POLISH_PROMPT, text, "LLM polish") or clean_speech_without_llm(text, language)
 
     def structure(self, text: str) -> str:
         template = str(self.config.get("structured_template", "summary_action_items")).lower()
@@ -425,6 +427,113 @@ def structure_without_llm(text: str, template: str) -> str:
         ]
 
     return "\n\n".join(format_markdown_section(title, items) for title, items in sections)
+
+
+def clean_speech_without_llm(text: str, language: Any = None) -> str:
+    cleaned = normalize_spaces(text)
+    if not cleaned:
+        return cleaned
+
+    if is_chinese_text(cleaned, language):
+        cleaned = clean_chinese_speech(cleaned)
+    else:
+        cleaned = clean_english_speech(cleaned)
+    return cleaned.strip()
+
+
+def normalize_spaces(text: str) -> str:
+    text = text.replace("\u3000", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def is_chinese_text(text: str, language: Any = None) -> bool:
+    chinese_chars = re.findall(r"[\u4e00-\u9fff]", text)
+    if not chinese_chars:
+        return False
+    if str(language).lower().startswith("zh"):
+        return True
+    return len(chinese_chars) >= max(2, len(text) // 5)
+
+
+def clean_chinese_speech(text: str) -> str:
+    text = normalize_chinese_punctuation(text)
+    text = remove_chinese_fillers(text)
+    text = add_chinese_phrase_commas(text)
+    text = re.sub(r"[，,]\s*[，,]+", "，", text)
+    text = re.sub(r"\s*([，。！？；：])\s*", r"\1", text)
+    text = re.sub(r"([。！？；：])，", r"\1", text)
+    if text and text[-1] not in "。！？；：":
+        text += "。"
+    return text
+
+
+def normalize_chinese_punctuation(text: str) -> str:
+    replacements = {
+        ",": "，",
+        ".": "。",
+        "?": "？",
+        "!": "！",
+        ";": "；",
+        ":": "：",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return text
+
+
+def remove_chinese_fillers(text: str) -> str:
+    boundary = r"(^|[，。！？；：\s])"
+    fillers = (
+        r"怎么说呢",
+        r"就是说",
+        r"嗯+",
+        r"呃+",
+        r"额+",
+        r"那个",
+        r"这个",
+        r"就是",
+    )
+    filler_group = "|".join(fillers)
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(rf"{boundary}(?:{filler_group})(?:[，\s]*)", r"\1", text)
+    text = re.sub(r"(然后)(?:，?然后)+", r"\1", text)
+    text = re.sub(r"(，)?(对吧|你知道吧|是不是)([。！？；：]|$)", r"\3", text)
+    return text.strip("， ")
+
+
+def add_chinese_phrase_commas(text: str) -> str:
+    markers = (
+        "但是",
+        "所以",
+        "因为",
+        "另外",
+        "然后",
+        "不过",
+        "而且",
+        "第一",
+        "第二",
+        "第三",
+        "第四",
+        "第五",
+    )
+    for marker in markers:
+        text = re.sub(rf"(?<!^)(?<![，。！？；：\n])({marker})", rf"，\1", text)
+    return text
+
+
+def clean_english_speech(text: str) -> str:
+    text = re.sub(r"\b(um+|uh+|er+|ah+)\b[, ]*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(you know|i mean|sort of|kind of)\b[, ]*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+([,.!?;:])", r"\1", text)
+    text = re.sub(r"([,.!?;:])(?=\S)", r"\1 ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if text:
+        text = text[0].upper() + text[1:]
+    if text and text[-1] not in ".!?;:":
+        text += "."
+    return text
 
 
 def split_sentences(text: str) -> list[str]:

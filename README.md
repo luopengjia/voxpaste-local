@@ -77,7 +77,7 @@ VoxPaste does not require an LLM for every mode:
 | Mode | LLM needed? | Behavior |
 | --- | --- | --- |
 | `raw` | No | Paste the Whisper transcript as-is. |
-| `polished` | Optional | If `use_local_llm=true`, clean the text with LM Studio. Otherwise paste the raw transcript. |
+| `polished` | Optional | If `use_local_llm=true`, clean the text with LM Studio. Otherwise use local rule-based cleanup for filler words, spacing, and punctuation. |
 | `structured` | Optional | If `use_local_llm=true`, ask LM Studio to produce structured Markdown. Otherwise use a rule-based Markdown fallback. |
 
 Structured output supports these templates:
@@ -89,6 +89,14 @@ Structured output supports these templates:
 The rule-based fallback is intentionally conservative. It formats the transcript into sections and extracts likely action items, but it does not infer, summarize deeply, or invent missing details. For higher-quality structure, run LM Studio locally and set `use_local_llm` to `true`.
 
 Older configs that still use `use_llm_polish` are supported as a backwards-compatible alias.
+
+You can test the local speech cleanup path without recording audio:
+
+```bash
+python voxpaste.py \
+  --output-mode polished \
+  --format-text "嗯那个就是我觉得这个软件有两个问题然后第一个是速度慢第二个是界面乱"
+```
 
 You can test the local rule-based structured path without recording audio:
 
