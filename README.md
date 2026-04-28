@@ -31,7 +31,6 @@ The Whisper backend uses MLX, so this is not a general Windows/Linux voice input
 ## Install
 
 ```bash
-git clone https://github.com/<your-github-username>/voxpaste-local.git
 cd voxpaste-local
 
 python3 -m venv .venv
