@@ -13,6 +13,7 @@ It is designed for people who write a lot in chat tools, notes, browsers, and ed
 - Records while you hold a keyboard key or mouse side button.
 - Transcribes audio with `mlx-whisper` on Apple Silicon.
 - Optionally cleans spoken text with a local LM Studio model.
+- Can output raw transcripts, polished writing, or structured Markdown.
 - Copies the final text to the clipboard and pastes it into the current cursor.
 - Keeps configuration in `config.local.json`, so the script can stay clean.
 
@@ -62,10 +63,41 @@ Common options:
 | `whisper_model` | MLX Whisper model or local path | `mlx-community/whisper-large-v3-turbo` |
 | `trigger_key` | Keyboard trigger, such as `alt_r`, `f5`, or `f12` | `alt_r` |
 | `trigger_mouse_button` | Mouse trigger. Supports `side`, `back`, `forward`, `mouse4`, `mouse5`, `middle`, `unknown`, `x1`, `x2` | `side` |
+| `output_mode` | Output mode: `raw`, `polished`, or `structured` | `polished` |
+| `structured_template` | Markdown template for structured output: `summary_action_items`, `meeting_notes`, or `jd_analysis` | `summary_action_items` |
 | `language` | Whisper language hint; use `null` for auto-detect | `zh` |
-| `use_llm_polish` | Whether to call LM Studio for text cleanup | `false` |
+| `use_local_llm` | Whether to call LM Studio for polished or structured output | `false` |
 | `lm_studio_url` | LM Studio OpenAI-compatible endpoint | `http://localhost:1234/v1` |
 | `llm_model` | Model name loaded in LM Studio | `local-model` |
+
+## Output Modes
+
+VoxPaste does not require an LLM for every mode:
+
+| Mode | LLM needed? | Behavior |
+| --- | --- | --- |
+| `raw` | No | Paste the Whisper transcript as-is. |
+| `polished` | Optional | If `use_local_llm=true`, clean the text with LM Studio. Otherwise paste the raw transcript. |
+| `structured` | Optional | If `use_local_llm=true`, ask LM Studio to produce structured Markdown. Otherwise use a rule-based Markdown fallback. |
+
+Structured output supports these templates:
+
+- `summary_action_items`: `Summary`, `Key Points`, `Action Items`
+- `meeting_notes`: `Summary`, `Discussion Notes`, `Decisions`, `Action Items`
+- `jd_analysis`: `Role Summary`, `Requirements`, `Signals To Highlight`, `Questions To Clarify`
+
+The rule-based fallback is intentionally conservative. It formats the transcript into sections and extracts likely action items, but it does not infer, summarize deeply, or invent missing details. For higher-quality structure, run LM Studio locally and set `use_local_llm` to `true`.
+
+Older configs that still use `use_llm_polish` are supported as a backwards-compatible alias.
+
+You can test the local rule-based structured path without recording audio:
+
+```bash
+python voxpaste.py \
+  --output-mode structured \
+  --structured-template summary_action_items \
+  --format-text "We need to review the JD. Next prepare a short demo video."
+```
 
 ## Permissions
 
@@ -84,7 +116,7 @@ Run:
 python voxpaste.py --check
 ```
 
-This checks the platform, imports core dependencies in child processes, and checks LM Studio only when `use_llm_polish` is enabled.
+This checks the platform, imports core dependencies in child processes, and checks LM Studio only when local LLM output is enabled.
 
 ## Run
 
@@ -122,6 +154,7 @@ The core product idea is not "another dictation app"; it is a low-friction input
 - MLX/Metal can fail in unsupported or headless environments.
 - Paste automation depends on macOS Accessibility permissions.
 - LM Studio cleanup is optional and only works when LM Studio is running with a loaded model.
+- Rule-based structured output is basic; high-quality structuring requires a local LLM.
 - The script is a local utility, not a signed macOS app.
 
 ## Project Structure

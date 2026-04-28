@@ -18,7 +18,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "whisper_model": "mlx-community/whisper-large-v3-turbo",
     "lm_studio_url": "http://localhost:1234/v1",
     "llm_model": "local-model",
-    "use_llm_polish": False,
+    "use_local_llm": False,
+    "output_mode": "polished",
+    "structured_template": "summary_action_items",
     "sample_rate": 16000,
     "trigger_key": "alt_r",
     "trigger_mouse_button": "side",
@@ -32,6 +34,28 @@ POLISH_PROMPT = (
     "language, keep all meaning, add line breaks when helpful, and output only "
     "the final text."
 )
+
+STRUCTURED_PROMPTS = {
+    "summary_action_items": (
+        "Turn the transcribed speech into concise Markdown with exactly these "
+        "sections: Summary, Key Points, Action Items. Do not invent facts. If a "
+        "section has no clear content, write '- None'. Output only Markdown."
+    ),
+    "meeting_notes": (
+        "Turn the transcribed speech into concise meeting notes in Markdown with "
+        "exactly these sections: Summary, Discussion Notes, Decisions, Action "
+        "Items. Do not invent facts. If a section has no clear content, write "
+        "'- None'. Output only Markdown."
+    ),
+    "jd_analysis": (
+        "Turn the transcribed speech or pasted job description into concise "
+        "Markdown with exactly these sections: Role Summary, Requirements, "
+        "Signals To Highlight, Questions To Clarify. Do not invent facts. If a "
+        "section has no clear content, write '- None'. Output only Markdown."
+    ),
+}
+
+VALID_OUTPUT_MODES = {"raw", "polished", "structured"}
 
 
 def log(message: str) -> None:
@@ -47,6 +71,18 @@ def load_config(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path} must contain a JSON object")
         config.update(user_config)
     return config
+
+
+def validate_config(config: dict[str, Any]) -> None:
+    output_mode = str(config.get("output_mode", "")).lower()
+    if output_mode not in VALID_OUTPUT_MODES:
+        valid = ", ".join(sorted(VALID_OUTPUT_MODES))
+        raise ValueError(f"output_mode must be one of: {valid}")
+
+    structured_template = str(config.get("structured_template", "")).lower()
+    if structured_template not in STRUCTURED_PROMPTS:
+        valid = ", ".join(sorted(STRUCTURED_PROMPTS))
+        raise ValueError(f"structured_template must be one of: {valid}")
 
 
 def write_default_config(path: Path) -> None:
@@ -83,6 +119,10 @@ def check_lm_studio(url: str) -> tuple[bool, str]:
         return False, str(error)
 
 
+def uses_local_llm(config: dict[str, Any]) -> bool:
+    return bool(config.get("use_local_llm") or config.get("use_llm_polish"))
+
+
 def run_checks(config: dict[str, Any]) -> int:
     log("VoxPaste Local environment check")
     log(f"Python: {sys.version.split()[0]}")
@@ -102,12 +142,12 @@ def run_checks(config: dict[str, Any]) -> int:
     failed = failed or not ok
     log(f"mlx_whisper: {'ok' if ok else 'failed'} ({detail})")
 
-    if config.get("use_llm_polish"):
+    if uses_local_llm(config):
         ok, detail = check_lm_studio(str(config["lm_studio_url"]))
         failed = failed or not ok
         log(f"LM Studio: {'ok' if ok else 'unreachable'} ({detail})")
     else:
-        log("LM Studio: skipped (use_llm_polish=false)")
+        log("LM Studio: skipped (use_local_llm=false)")
 
     return 1 if failed else 0
 
@@ -188,7 +228,7 @@ class VoxPasteApp:
             if not text:
                 log("Transcript is empty; skipped.")
                 return
-            final_text = self.polish(text)
+            final_text = self.format_output(text)
             self.paste(final_text)
         except Exception as error:
             log(f"Error: {error}")
@@ -210,10 +250,32 @@ class VoxPasteApp:
         log(f"Transcript: {text}")
         return text
 
-    def polish(self, text: str) -> str:
-        if not self.config.get("use_llm_polish") or len(text) < 5:
+    def format_output(self, text: str) -> str:
+        mode = str(self.config.get("output_mode", "polished")).lower()
+        if mode == "raw":
             return text
+        if mode == "polished":
+            return self.polish_with_llm(text)
+        if mode == "structured":
+            return self.structure(text)
+        raise ValueError(f"unknown output_mode: {mode}")
 
+    def polish_with_llm(self, text: str) -> str:
+        if not uses_local_llm(self.config) or len(text) < 5:
+            return text
+        return self.try_local_llm(POLISH_PROMPT, text, "LLM polish") or text
+
+    def structure(self, text: str) -> str:
+        template = str(self.config.get("structured_template", "summary_action_items")).lower()
+        if uses_local_llm(self.config) and len(text) >= 5:
+            prompt = STRUCTURED_PROMPTS[template]
+            structured_text = self.try_local_llm(prompt, text, "LLM structure")
+            if structured_text:
+                return structured_text
+        log("Structuring without LLM; using rule-based Markdown fallback.")
+        return structure_without_llm(text, template)
+
+    def try_local_llm(self, system_prompt: str, text: str, task_name: str) -> str | None:
         from openai import OpenAI
 
         if self.llm_client is None:
@@ -221,22 +283,22 @@ class VoxPasteApp:
                 base_url=self.config["lm_studio_url"],
                 api_key="lm-studio",
             )
-        log("Polishing with local LLM...")
+        log(f"{task_name} with local LLM...")
         try:
             response = self.llm_client.chat.completions.create(
                 model=self.config["llm_model"],
                 messages=[
-                    {"role": "system", "content": POLISH_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text},
                 ],
                 temperature=0.3,
-                max_tokens=512,
+                max_tokens=900,
             )
             content = response.choices[0].message.content or ""
-            return content.strip() or text
+            return content.strip() or None
         except Exception as error:
-            log(f"LLM polish failed; using raw transcript. Detail: {error}")
-            return text
+            log(f"{task_name} failed; using fallback. Detail: {error}")
+            return None
 
     def paste(self, text: str) -> None:
         import pyperclip
@@ -336,6 +398,91 @@ def parse_mouse_button(mouse_module: Any, value: Any) -> Any:
     raise ValueError(f"unknown mouse trigger: {value}")
 
 
+def structure_without_llm(text: str, template: str) -> str:
+    sentences = split_sentences(text)
+    key_points = sentences[:6] or [text.strip()]
+    action_items = find_action_items(sentences)
+
+    if template == "meeting_notes":
+        sections = [
+            ("Summary", [text.strip()]),
+            ("Discussion Notes", key_points),
+            ("Decisions", ["None"]),
+            ("Action Items", action_items or ["None"]),
+        ]
+    elif template == "jd_analysis":
+        sections = [
+            ("Role Summary", [text.strip()]),
+            ("Requirements", key_points),
+            ("Signals To Highlight", ["None"]),
+            ("Questions To Clarify", ["None"]),
+        ]
+    else:
+        sections = [
+            ("Summary", [text.strip()]),
+            ("Key Points", key_points),
+            ("Action Items", action_items or ["None"]),
+        ]
+
+    return "\n\n".join(format_markdown_section(title, items) for title, items in sections)
+
+
+def split_sentences(text: str) -> list[str]:
+    cleaned = " ".join(text.strip().split())
+    if not cleaned:
+        return []
+
+    sentences: list[str] = []
+    current: list[str] = []
+    for char in cleaned:
+        current.append(char)
+        if char in ".!?;。！？；":
+            sentence = "".join(current).strip()
+            if sentence:
+                sentences.append(sentence)
+            current = []
+
+    tail = "".join(current).strip()
+    if tail:
+        sentences.append(tail)
+    return sentences
+
+
+def find_action_items(sentences: list[str]) -> list[str]:
+    markers = (
+        "need to",
+        "should",
+        "todo",
+        "to do",
+        "follow up",
+        "next",
+        "must",
+        "remember to",
+        "需要",
+        "要做",
+        "要完成",
+        "应该",
+        "待办",
+        "下一步",
+        "记得",
+        "必须",
+    )
+    action_items = []
+    for sentence in sentences:
+        normalized = sentence.lower()
+        if any(marker in normalized for marker in markers):
+            action_items.append(sentence)
+    return action_items[:8]
+
+
+def format_markdown_section(title: str, items: list[str]) -> str:
+    safe_items = [item.strip() for item in items if item.strip()]
+    if not safe_items:
+        safe_items = ["None"]
+    bullets = "\n".join(f"- {item}" for item in safe_items)
+    return f"## {title}\n{bullets}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Local voice-to-paste tool for macOS.")
     parser.add_argument(
@@ -359,6 +506,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the resolved config and exit.",
     )
+    parser.add_argument(
+        "--format-text",
+        help="Format provided text according to output_mode and print it without recording or pasting.",
+    )
+    parser.add_argument(
+        "--output-mode",
+        choices=sorted(VALID_OUTPUT_MODES),
+        help="Override config output_mode for this run.",
+    )
+    parser.add_argument(
+        "--structured-template",
+        choices=sorted(STRUCTURED_PROMPTS),
+        help="Override config structured_template for this run.",
+    )
     return parser
 
 
@@ -372,6 +533,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     config = load_config(args.config)
+    if args.output_mode:
+        config["output_mode"] = args.output_mode
+    if args.structured_template:
+        config["structured_template"] = args.structured_template
+    validate_config(config)
 
     if args.print_config:
         print(json.dumps(config, ensure_ascii=False, indent=2))
@@ -379,6 +545,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         return run_checks(config)
+
+    if args.format_text is not None:
+        print(VoxPasteApp(config).format_output(args.format_text))
+        return 0
 
     VoxPasteApp(config).run()
     return 0
