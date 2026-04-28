@@ -462,6 +462,7 @@ def clean_chinese_speech(text: str) -> str:
     text = normalize_chinese_speech_markers(text)
     text = add_chinese_phrase_commas(text)
     text = add_chinese_clause_commas(text)
+    text = add_chinese_question_marks(text)
     text = add_chinese_sentence_breaks(text)
     text = re.sub(r"[，,]\s*[，,]+", "，", text)
     text = re.sub(r"\s*([，。！？；：])\s*", r"\1", text)
@@ -534,6 +535,8 @@ def add_chinese_phrase_commas(text: str) -> str:
         "其次",
         "最后",
         "同时",
+        "实际上",
+        "其实",
         "比如",
         "比如说",
         "以及",
@@ -594,12 +597,69 @@ def add_chinese_clause_commas(text: str) -> str:
         r"\1，\2",
         text,
     )
+    text = re.sub(r"(?<!^)(?<![，。！？；：\n])现在(?=这(?:句|段|个|种|些))", "，现在", text)
+    return text
+
+
+def add_chinese_question_marks(text: str) -> str:
+    question_words = (
+        "怎么",
+        "为什么",
+        "为何",
+        "什么",
+        "是否",
+        "能不能",
+        "可不可以",
+        "是不是",
+        "多少",
+        "哪里",
+        "哪一个",
+        "哪种",
+        "吗",
+    )
+    question_group = "|".join(question_words)
+    follow_up_markers = (
+        "因为",
+        "但是",
+        "不过",
+        "所以",
+        "然后",
+        "另外",
+        "现在",
+        "刚才",
+        "这句话",
+        "我想",
+        "我需要",
+        "我希望",
+        "我觉得",
+        "我认为",
+        "下一步",
+        "接下来",
+    )
+    follow_up_group = "|".join(follow_up_markers)
+    text = re.sub(
+        rf"([^。！？；：\n]{{0,50}}(?:{question_group})[^。！？；：\n]{{0,30}})，({follow_up_group})",
+        r"\1？\2",
+        text,
+    )
     return text
 
 
 def add_chinese_sentence_breaks(text: str) -> str:
     list_intro = r"((?:一|二|两|三|四|五|\d+)(?:个|件)?(?:问题|事情|事|部分|点|方向|任务|步骤|原因|目标))"
     text = re.sub(rf"{list_intro}，?(第一)", r"\1：\2", text)
+
+    contrast_subjects = (
+        "你却",
+        "我却",
+        "他却",
+        "她却",
+        "它却",
+        "我们却",
+        "他们却",
+    )
+    contrast_group = "|".join(contrast_subjects)
+    text = re.sub(rf"(?<!^)(?<![。！？；：\n])，?({contrast_group})", rf"。\1", text)
 
     end_markers = ("下一步", "接下来", "最后")
     for marker in end_markers:
