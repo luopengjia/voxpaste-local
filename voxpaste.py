@@ -22,6 +22,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "use_local_llm": False,
     "output_mode": "polished",
     "structured_template": "summary_action_items",
+    "use_word_timestamps": True,
+    "pause_comma_sec": 0.45,
+    "pause_period_sec": 0.85,
     "sample_rate": 16000,
     "trigger_key": "alt_r",
     "trigger_mouse_button": "side",
@@ -243,11 +246,19 @@ class VoxPasteApp:
         kwargs: dict[str, Any] = {
             "path_or_hf_repo": self.config["whisper_model"],
             "verbose": False,
+            "word_timestamps": bool(self.config.get("use_word_timestamps", True)),
         }
         if self.config.get("language"):
             kwargs["language"] = self.config["language"]
         result = mlx_whisper.transcribe(audio, **kwargs)
         text = str(result.get("text", "")).strip()
+        if self.config.get("use_word_timestamps", True):
+            text = add_pause_punctuation_from_segments(
+                result,
+                text,
+                float(self.config.get("pause_comma_sec", 0.45)),
+                float(self.config.get("pause_period_sec", 0.85)),
+            )
         log(f"Transcript: {text}")
         return text
 
@@ -430,6 +441,91 @@ def structure_without_llm(text: str, template: str) -> str:
     return "\n\n".join(format_markdown_section(title, items) for title, items in sections)
 
 
+def add_pause_punctuation_from_segments(
+    result: dict[str, Any],
+    fallback_text: str,
+    comma_sec: float,
+    period_sec: float,
+) -> str:
+    words = extract_timestamp_words(result)
+    if len(words) < 2:
+        return fallback_text
+
+    pieces: list[str] = []
+    for index, word in enumerate(words):
+        text = str(word.get("word", ""))
+        if not text.strip():
+            continue
+        pieces.append(text)
+
+        if index >= len(words) - 1:
+            continue
+        end = safe_float(word.get("end"))
+        next_start = safe_float(words[index + 1].get("start"))
+        if end is None or next_start is None:
+            continue
+
+        gap = next_start - end
+        if gap >= period_sec:
+            append_pause_mark(pieces, "。")
+        elif gap >= comma_sec:
+            append_pause_mark(pieces, "，")
+
+    rebuilt = normalize_timestamp_text("".join(pieces))
+    if not rebuilt:
+        return fallback_text
+    if too_different_from_fallback(rebuilt, fallback_text):
+        return fallback_text
+    return rebuilt
+
+
+def extract_timestamp_words(result: dict[str, Any]) -> list[dict[str, Any]]:
+    words: list[dict[str, Any]] = []
+    for segment in result.get("segments", []) or []:
+        if not isinstance(segment, dict):
+            continue
+        for word in segment.get("words", []) or []:
+            if isinstance(word, dict):
+                words.append(word)
+    return words
+
+
+def safe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def append_pause_mark(pieces: list[str], mark: str) -> None:
+    while pieces and not pieces[-1]:
+        pieces.pop()
+    if not pieces:
+        return
+    pieces[-1] = pieces[-1].rstrip()
+    if not pieces[-1] or pieces[-1][-1] in "，。！？；：,.!?;:":
+        return
+    pieces.append(mark)
+
+
+def normalize_timestamp_text(text: str) -> str:
+    text = re.sub(r"\s*([，。！？；：,.!?;:])\s*", r"\1", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"([\u4e00-\u9fff])\s+([\u4e00-\u9fff])", r"\1\2", text)
+    text = re.sub(r"\s*([，。！？；：])\s*", r"\1", text)
+    return text
+
+
+def too_different_from_fallback(rebuilt: str, fallback: str) -> bool:
+    rebuilt_plain = re.sub(r"[\s，。！？；：,.!?;:]", "", rebuilt)
+    fallback_plain = re.sub(r"[\s，。！？；：,.!?;:]", "", fallback)
+    if not fallback_plain:
+        return False
+    lower_bound = len(fallback_plain) * 0.55
+    upper_bound = len(fallback_plain) * 1.45
+    return not (lower_bound <= len(rebuilt_plain) <= upper_bound)
+
+
 def clean_speech_without_llm(text: str, language: Any = None) -> str:
     cleaned = normalize_spaces(text)
     if not cleaned:
@@ -468,6 +564,7 @@ def clean_chinese_speech(text: str) -> str:
     text = re.sub(r"\s*([，。！？；：])\s*", r"\1", text)
     text = re.sub(r"([。！？；：])，", r"\1", text)
     text = re.sub(r"：，", "：", text)
+    text = re.sub(r"(所以)，(我想|我觉得|我认为|我们需要)", r"\1\2", text)
     if text and text[-1] not in "。！？；：":
         text += "。"
     return text

@@ -21,6 +21,7 @@ VoxPaste is built around that second half. It optimizes for:
 - Mixed-language control: let the user choose a Chinese hint or Whisper auto-detection for Chinese-English speech.
 - Post-processing: clean filler words, punctuation, and simple structure before the text reaches the app.
 - Local ownership: keep transcription and optional rewriting on the user's machine.
+- Quality iteration: treat punctuation and cleanup as testable product behavior, not one-off prompt tuning.
 
 ## Why Not Just Use macOS Dictation?
 
@@ -76,9 +77,15 @@ The mouse side button is treated as a first-class trigger. That makes the tool f
 
 The default backend is `mlx-whisper`, which runs locally on Apple Silicon. This keeps the project narrow but practical: it is optimized for one environment rather than pretending to be cross-platform before the workflow is stable.
 
-### Rule-Based Cleanup Before LLM Cleanup
+### Pause-Aware And Rule-Based Cleanup Before LLM Cleanup
 
 Not every text cleanup task needs a large language model. Punctuation, filler-word removal, repeated connector cleanup, and simple Chinese clause boundaries can often be handled by deterministic rules.
+
+VoxPaste also enables Whisper word timestamps by default. When timestamp data is available, pauses in the audio become punctuation signals:
+
+- Short pause -> comma candidate.
+- Longer pause -> period candidate.
+- Text rules then correct common Chinese question, contrast, enumeration, and connector patterns.
 
 This default has three advantages:
 
@@ -140,6 +147,9 @@ Common options:
 | `trigger_mouse_button` | Mouse trigger. Supports `side`, `back`, `forward`, `mouse4`, `mouse5`, `middle`, `unknown`, `x1`, `x2` | `side` |
 | `output_mode` | Output mode: `raw`, `polished`, or `structured` | `polished` |
 | `structured_template` | Markdown template for structured output: `summary_action_items`, `meeting_notes`, or `jd_analysis` | `summary_action_items` |
+| `use_word_timestamps` | Whether to ask Whisper for word timestamps and use speech pauses as punctuation signals | `true` |
+| `pause_comma_sec` | Minimum word gap treated as a comma candidate | `0.45` |
+| `pause_period_sec` | Minimum word gap treated as a period candidate | `0.85` |
 | `language` | Whisper language hint. Use `zh` for mostly Chinese speech; use `null` to let Whisper auto-detect, which can be useful for mixed Chinese-English speech | `zh` |
 | `use_local_llm` | Whether to call LM Studio for polished or structured output | `false` |
 | `lm_studio_url` | LM Studio OpenAI-compatible endpoint | `http://localhost:1234/v1` |
@@ -180,6 +190,14 @@ Example output:
 ```text
 我觉得这个软件有两个问题：第一个是速度慢，第二个是界面乱。
 ```
+
+The local formatter is covered by regression fixtures:
+
+```bash
+python scripts/run_format_tests.py
+```
+
+These tests protect common Chinese speech cases such as filler words, long unpunctuated clauses, questions followed by a new intent, enumeration, and pause-aware punctuation.
 
 You can test the local rule-based structured path without recording audio:
 
@@ -279,6 +297,15 @@ This project is also a portfolio artifact. It demonstrates:
 - Practical scoping: choosing macOS Apple Silicon first instead of overextending into every platform.
 - Engineering hygiene: external config, environment checks, helper scripts, public documentation, and a standard license.
 - Iteration: improving punctuation stability and mixed-language usability from actual usage feedback.
+- Quality discipline: maintaining formatting regression tests for real spoken-text failure cases.
+
+## Roadmap
+
+- Expand the spoken-text regression set with more real failure cases.
+- Improve pause-to-punctuation alignment with richer word timestamp handling.
+- Evaluate a small punctuation restoration model as an optional local backend.
+- Keep the local LLM path optional for semantic rewriting, not basic punctuation.
+- Package the macOS workflow more cleanly once the core input quality is stable.
 
 ## Demo Story
 
@@ -308,7 +335,10 @@ The point of the demo is not to claim universal accuracy superiority. The point 
 ├── requirements.txt         # runtime dependencies
 ├── scripts/
 │   ├── detect_key.py        # inspect keyboard trigger names
-│   └── detect_mouse.py      # inspect mouse trigger names
+│   ├── detect_mouse.py      # inspect mouse trigger names
+│   └── run_format_tests.py  # run formatting regression tests
+├── tests/
+│   └── fixtures/            # spoken-text formatting test cases
 ├── docs/
 │   └── project-brief.md     # portfolio summary
 └── README.md
