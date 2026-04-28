@@ -10,7 +10,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from voxpaste import add_pause_punctuation_from_segments, clean_speech_without_llm  # noqa: E402
+from voxpaste import (  # noqa: E402
+    add_pause_punctuation_from_segments,
+    clean_speech_without_llm,
+    detect_speech_intervals,
+)
 
 
 def load_json(path: Path) -> Any:
@@ -65,6 +69,37 @@ def run_pause_cases(path: Path) -> list[str]:
     return failures
 
 
+def run_audio_pause_detection_cases() -> list[str]:
+    import math
+
+    import numpy as np
+
+    sample_rate = 16000
+
+    def tone(duration_sec: float) -> np.ndarray:
+        sample_count = int(sample_rate * duration_sec)
+        values = [
+            0.04 * math.sin(2 * math.pi * 220 * index / sample_rate)
+            for index in range(sample_count)
+        ]
+        return np.asarray(values, dtype="float32")
+
+    audio = np.concatenate(
+        [
+            tone(0.65),
+            np.zeros(int(sample_rate * 0.55), dtype="float32"),
+            tone(0.7),
+            np.zeros(int(sample_rate * 0.95), dtype="float32"),
+            tone(0.65),
+        ]
+    )
+
+    intervals = detect_speech_intervals(audio, sample_rate, 0.45, 0.45)
+    if len(intervals) != 3:
+        return [f"[audio-pause] expected 3 speech intervals, got {len(intervals)}: {intervals}"]
+    return []
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run VoxPaste formatting regression tests.")
     parser.add_argument(
@@ -81,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     failures.extend(run_speech_cases(fixture_dir / "zh_speech_cases.json", args.tag))
     if not args.tag:
         failures.extend(run_pause_cases(fixture_dir / "pause_cases.json"))
+        failures.extend(run_audio_pause_detection_cases())
 
     if failures:
         print("\n\n".join(failures), file=sys.stderr)

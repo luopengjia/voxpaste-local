@@ -13,7 +13,7 @@ VoxPaste reframes voice input as a desktop productivity workflow:
 ```text
 fast trigger
   -> local transcription
-  -> pause-aware punctuation + deterministic cleanup or optional local LLM polishing
+  -> audio pause segmentation + deterministic cleanup or optional local LLM polishing
   -> paste into the current app
 ```
 
@@ -50,7 +50,7 @@ hold trigger key / mouse side button
 - Refactored a personal script into a public GitHub project with external configuration, a README, license, `.gitignore`, and environment checks.
 - Implemented hold-to-record triggers for both keyboard keys and mouse buttons, including side-button aliases such as `side`, `mouse4`, and `mouse5`.
 - Added optional output modes for raw transcripts, local rule-based speech cleanup, and structured Markdown.
-- Improved local Chinese speech cleanup for filler words, pause-aware punctuation, clause boundaries, questions, contrast, and common spoken connectors.
+- Improved local Chinese speech cleanup for filler words, audio pause-aware punctuation, clause boundaries, questions, contrast, and common spoken connectors.
 - Added formatting regression fixtures for real Chinese spoken-text failure cases.
 - Added helper scripts to inspect keyboard and mouse trigger names recognized by the local `pynput` backend.
 - Added lazy imports and a `--check` command that verifies core dependencies in child processes, reducing crash risk in unsupported MLX/Metal environments.
@@ -68,7 +68,7 @@ hold trigger key / mouse side button
 - Focused on macOS Apple Silicon first instead of building a shallow cross-platform version.
 - Used mouse side-button push-to-talk as a core interaction, not just a keyboard shortcut.
 - Made local rule-based cleanup the default because simple punctuation and filler cleanup should be fast, predictable, and usable without an LLM.
-- Enabled Whisper word timestamps so speech pauses can become punctuation signals before text rules run.
+- Added audio-level pause segmentation before full transcription, with Whisper word timestamps as a fallback punctuation signal.
 - Added golden tests for spoken-text cleanup because punctuation quality is easy to regress.
 - Kept local LLM support optional for semantic rewriting and higher-quality structure.
 - Designed the tool to paste into existing apps instead of forcing users into a dedicated editor.
@@ -78,7 +78,7 @@ hold trigger key / mouse side button
 ```text
 I did not want to build another generic dictation demo. I noticed that native dictation is good at basic speech-to-text, but the real pain in my writing workflow was mixed Chinese-English input, missing punctuation, filler words, and moving text across apps. So I built VoxPaste as a local voice-to-paste layer: hold a mouse side button, speak, release, transcribe locally with Whisper, clean the spoken draft, and paste it directly into the active cursor.
 
-The most important product decision was not to use an LLM for everything. For everyday punctuation and filler-word cleanup, I use Whisper timestamps, deterministic local rules, and regression tests first because they are faster, more predictable, and do not require LM Studio to be running. The LLM layer remains optional for deeper rewriting or structured notes.
+The most important product decision was not to use an LLM for everything. For everyday punctuation and filler-word cleanup, I use audio pause segmentation, Whisper timestamps, deterministic local rules, and regression tests first because they are faster, more predictable, and do not require LM Studio to be running. The LLM layer remains optional for deeper rewriting or structured notes.
 ```
 
 ## Resume Version
@@ -87,6 +87,6 @@ The most important product decision was not to use an LLM for everything. For ev
 VoxPaste Local | Local-first AI voice input utility for macOS
 - Built a local macOS voice-input workflow: hold a keyboard key or mouse side button to record, release to transcribe with MLX Whisper, and automatically paste the result into the active cursor.
 - Added output modes for raw transcripts, local rule-based speech cleanup, and structured Markdown notes, with optional local LLM support through LM Studio's OpenAI-compatible API.
-- Improved Chinese speech cleanup with Whisper word timestamps, pause-aware punctuation, deterministic post-processing rules, and regression fixtures for real spoken-text failure cases.
+- Improved Chinese speech cleanup with audio pause segmentation, Whisper word timestamps, deterministic post-processing rules, and regression fixtures for real spoken-text failure cases.
 - Refactored a personal automation script into a public GitHub project with external configuration, environment checks, helper scripts, README documentation, and a standard open-source license.
 ```

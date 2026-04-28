@@ -22,9 +22,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "use_local_llm": False,
     "output_mode": "polished",
     "structured_template": "summary_action_items",
+    "use_audio_pause_segmentation": True,
     "use_word_timestamps": True,
     "pause_comma_sec": 0.45,
     "pause_period_sec": 0.85,
+    "pause_min_chunk_sec": 0.45,
+    "pause_max_segments": 8,
     "sample_rate": 16000,
     "trigger_key": "alt_r",
     "trigger_mouse_button": "side",
@@ -250,6 +253,22 @@ class VoxPasteApp:
         }
         if self.config.get("language"):
             kwargs["language"] = self.config["language"]
+        if self.config.get("use_audio_pause_segmentation", True):
+            segmented_text = transcribe_audio_pause_segments(
+                mlx_whisper,
+                audio,
+                kwargs,
+                int(self.config["sample_rate"]),
+                float(self.config.get("pause_comma_sec", 0.45)),
+                float(self.config.get("pause_period_sec", 0.85)),
+                float(self.config.get("pause_min_chunk_sec", 0.45)),
+                int(self.config.get("pause_max_segments", 8)),
+            )
+            if segmented_text:
+                log("Transcript strategy: audio pause segmentation")
+                log(f"Transcript: {segmented_text}")
+                return segmented_text
+
         result = mlx_whisper.transcribe(audio, **kwargs)
         text = str(result.get("text", "")).strip()
         if self.config.get("use_word_timestamps", True):
@@ -259,6 +278,9 @@ class VoxPasteApp:
                 float(self.config.get("pause_comma_sec", 0.45)),
                 float(self.config.get("pause_period_sec", 0.85)),
             )
+            log("Transcript strategy: word timestamps")
+        else:
+            log("Transcript strategy: full audio")
         log(f"Transcript: {text}")
         return text
 
@@ -439,6 +461,160 @@ def structure_without_llm(text: str, template: str) -> str:
         ]
 
     return "\n\n".join(format_markdown_section(title, items) for title, items in sections)
+
+
+def transcribe_audio_pause_segments(
+    mlx_whisper_module: Any,
+    audio: Any,
+    base_kwargs: dict[str, Any],
+    sample_rate: int,
+    comma_sec: float,
+    period_sec: float,
+    min_chunk_sec: float,
+    max_segments: int,
+) -> str | None:
+    intervals = detect_speech_intervals(audio, sample_rate, comma_sec, min_chunk_sec)
+    if len(intervals) < 2 or len(intervals) > max_segments:
+        return None
+
+    parts: list[str] = []
+    previous_end: int | None = None
+    chunk_kwargs = base_kwargs.copy()
+    chunk_kwargs["word_timestamps"] = False
+
+    for start, end in intervals:
+        chunk = audio[start:end]
+        if len(chunk) < sample_rate * min_chunk_sec:
+            continue
+
+        result = mlx_whisper_module.transcribe(chunk, **chunk_kwargs)
+        chunk_text = str(result.get("text", "")).strip()
+        if not chunk_text:
+            continue
+
+        if parts and previous_end is not None:
+            gap = (start - previous_end) / sample_rate
+            mark = "。" if gap >= period_sec else "，"
+            append_boundary_mark(parts, mark)
+
+        parts.append(chunk_text)
+        previous_end = end
+
+    if len(parts) < 2:
+        return None
+
+    return normalize_timestamp_text("".join(parts))
+
+
+def detect_speech_intervals(
+    audio: Any,
+    sample_rate: int,
+    split_pause_sec: float,
+    min_chunk_sec: float,
+) -> list[tuple[int, int]]:
+    import numpy as np
+
+    waveform = np.asarray(audio, dtype="float32").flatten()
+    if waveform.size < sample_rate * min_chunk_sec:
+        return []
+
+    frame_size = max(1, int(sample_rate * 0.03))
+    frame_count = waveform.size // frame_size
+    if frame_count < 3:
+        return []
+
+    trimmed = waveform[: frame_count * frame_size]
+    frames = trimmed.reshape(frame_count, frame_size)
+    rms = np.sqrt(np.mean(frames * frames, axis=1))
+    if float(np.max(rms)) < 1e-4:
+        return []
+
+    noise_floor = float(np.percentile(rms, 20))
+    active_level = float(np.percentile(rms, 90))
+    threshold = max(0.006, noise_floor * 2.5, active_level * 0.08)
+    speech = rms > threshold
+    speech = smooth_speech_mask(speech, max(1, int(0.09 / 0.03)))
+
+    raw_intervals: list[tuple[int, int]] = []
+    start_frame: int | None = None
+    for index, is_speech in enumerate(speech):
+        if is_speech and start_frame is None:
+            start_frame = index
+        elif not is_speech and start_frame is not None:
+            raw_intervals.append((start_frame * frame_size, index * frame_size))
+            start_frame = None
+    if start_frame is not None:
+        raw_intervals.append((start_frame * frame_size, frame_count * frame_size))
+
+    if not raw_intervals:
+        return []
+
+    speech_intervals = [
+        (start, end)
+        for start, end in raw_intervals
+        if end - start >= sample_rate * 0.12
+    ]
+    merged = merge_and_filter_intervals(
+        speech_intervals,
+        sample_rate,
+        split_pause_sec,
+        min_chunk_sec,
+    )
+    pad = int(sample_rate * 0.04)
+    return [(max(0, start - pad), min(waveform.size, end + pad)) for start, end in merged]
+
+
+def smooth_speech_mask(mask: Any, max_gap_frames: int) -> Any:
+    import numpy as np
+
+    smoothed = np.asarray(mask, dtype=bool).copy()
+    last_speech: int | None = None
+    gap_start: int | None = None
+    for index, value in enumerate(smoothed):
+        if value:
+            if last_speech is not None and gap_start is not None:
+                gap = index - gap_start
+                if gap <= max_gap_frames:
+                    smoothed[gap_start:index] = True
+            last_speech = index
+            gap_start = None
+        elif last_speech is not None and gap_start is None:
+            gap_start = index
+    return smoothed
+
+
+def merge_and_filter_intervals(
+    intervals: list[tuple[int, int]],
+    sample_rate: int,
+    split_pause_sec: float,
+    min_chunk_sec: float,
+) -> list[tuple[int, int]]:
+    if not intervals:
+        return []
+
+    merged: list[tuple[int, int]] = [intervals[0]]
+    for start, end in intervals[1:]:
+        previous_start, previous_end = merged[-1]
+        gap = (start - previous_end) / sample_rate
+        if gap < split_pause_sec:
+            merged[-1] = (previous_start, max(previous_end, end))
+        else:
+            merged.append((start, end))
+
+    min_samples = int(sample_rate * min_chunk_sec)
+    return [(start, end) for start, end in merged if end - start >= min_samples]
+
+
+def append_boundary_mark(parts: list[str], mark: str) -> None:
+    if not parts:
+        return
+    text = parts[-1].rstrip()
+    if not text:
+        return
+    if text[-1] in "？！!?":
+        parts[-1] = text
+        return
+    parts[-1] = text.rstrip("，。；：,.!?;:") + mark
 
 
 def add_pause_punctuation_from_segments(

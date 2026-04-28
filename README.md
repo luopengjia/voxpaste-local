@@ -81,11 +81,12 @@ The default backend is `mlx-whisper`, which runs locally on Apple Silicon. This 
 
 Not every text cleanup task needs a large language model. Punctuation, filler-word removal, repeated connector cleanup, and simple Chinese clause boundaries can often be handled by deterministic rules.
 
-VoxPaste also enables Whisper word timestamps by default. When timestamp data is available, pauses in the audio become punctuation signals:
+VoxPaste uses audio-level pause segmentation before falling back to full-audio transcription. When obvious silence gaps are detected, it transcribes speech chunks separately and uses the pause duration as a punctuation signal:
 
 - Short pause -> comma candidate.
 - Longer pause -> period candidate.
-- Text rules then correct common Chinese question, contrast, enumeration, and connector patterns.
+
+If the audio does not contain reliable pauses, VoxPaste falls back to full-audio Whisper transcription and then uses Whisper word timestamps when available. Text rules finally correct common Chinese question, contrast, enumeration, and connector patterns.
 
 This default has three advantages:
 
@@ -147,9 +148,12 @@ Common options:
 | `trigger_mouse_button` | Mouse trigger. Supports `side`, `back`, `forward`, `mouse4`, `mouse5`, `middle`, `unknown`, `x1`, `x2` | `side` |
 | `output_mode` | Output mode: `raw`, `polished`, or `structured` | `polished` |
 | `structured_template` | Markdown template for structured output: `summary_action_items`, `meeting_notes`, or `jd_analysis` | `summary_action_items` |
+| `use_audio_pause_segmentation` | Whether to split audio on obvious pauses before transcription | `true` |
 | `use_word_timestamps` | Whether to ask Whisper for word timestamps and use speech pauses as punctuation signals | `true` |
 | `pause_comma_sec` | Minimum word gap treated as a comma candidate | `0.45` |
 | `pause_period_sec` | Minimum word gap treated as a period candidate | `0.85` |
+| `pause_min_chunk_sec` | Minimum speech chunk duration for pause-based segmentation | `0.45` |
+| `pause_max_segments` | Maximum number of speech chunks to transcribe separately before falling back to full audio | `8` |
 | `language` | Whisper language hint. Use `zh` for mostly Chinese speech; use `null` to let Whisper auto-detect, which can be useful for mixed Chinese-English speech | `zh` |
 | `use_local_llm` | Whether to call LM Studio for polished or structured output | `false` |
 | `lm_studio_url` | LM Studio OpenAI-compatible endpoint | `http://localhost:1234/v1` |
@@ -197,7 +201,7 @@ The local formatter is covered by regression fixtures:
 python scripts/run_format_tests.py
 ```
 
-These tests protect common Chinese speech cases such as filler words, long unpunctuated clauses, questions followed by a new intent, enumeration, and pause-aware punctuation.
+These tests protect common Chinese speech cases such as filler words, long unpunctuated clauses, questions followed by a new intent, enumeration, timestamp-based punctuation, and audio pause detection.
 
 You can test the local rule-based structured path without recording audio:
 
@@ -302,7 +306,7 @@ This project is also a portfolio artifact. It demonstrates:
 ## Roadmap
 
 - Expand the spoken-text regression set with more real failure cases.
-- Improve pause-to-punctuation alignment with richer word timestamp handling.
+- Improve pause-to-punctuation alignment with richer audio and word timestamp handling.
 - Evaluate a small punctuation restoration model as an optional local backend.
 - Keep the local LLM path optional for semantic rewriting, not basic punctuation.
 - Package the macOS workflow more cleanly once the core input quality is stable.
