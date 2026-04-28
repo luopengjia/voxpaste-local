@@ -134,10 +134,12 @@ The core product idea is not "another dictation app"; it is a low-friction input
 ├── scripts/
 │   ├── detect_key.py        # inspect keyboard trigger names
 │   └── detect_mouse.py      # inspect mouse trigger names
+├── docs/
+│   └── project-brief.md     # portfolio summary
 └── README.md
 ```
 
-For a Chinese portfolio summary, see [docs/project-brief.zh-CN.md](docs/project-brief.zh-CN.md).
+For a portfolio-ready project summary, see [docs/project-brief.md](docs/project-brief.md).
 
 ## License
 
