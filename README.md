@@ -10,6 +10,18 @@ It is designed for people who write across chat apps, notes, browsers, and edito
 
 The core idea is simple: voice input should behave like a universal text shortcut. Hold a key or mouse side button, speak, release, and the cleaned text appears exactly where the cursor is.
 
+## Product Thesis
+
+Native dictation solves the first half of the problem: speech to text. Frequent desktop writing also needs the second half: turning an imperfect spoken draft into usable text in the current app.
+
+VoxPaste is built around that second half. It optimizes for:
+
+- Invocation speed: a push-to-talk style trigger instead of opening a dictation UI.
+- Cross-app flow: paste into the active cursor in WeChat, browsers, notes, editors, and forms.
+- Mixed-language control: let the user choose a Chinese hint or Whisper auto-detection for Chinese-English speech.
+- Post-processing: clean filler words, punctuation, and simple structure before the text reaches the app.
+- Local ownership: keep transcription and optional rewriting on the user's machine.
+
 ## Why Not Just Use macOS Dictation?
 
 Built-in dictation is convenient, but it is optimized for general-purpose speech input. In real desktop writing, the friction often appears in different places:
@@ -51,6 +63,34 @@ This project does not claim to beat native dictation in every situation. It targ
 - Cross-app by default: the output goes into the active cursor, not a dedicated editor.
 - Deterministic when possible: simple cleanup should not require a large language model.
 - Optional intelligence: use a local LLM only when the user wants deeper rewriting or structured notes.
+
+## Design Choices
+
+### Push-To-Talk Instead Of Always-On Dictation
+
+VoxPaste uses a hold-to-record interaction because it gives the user a clear start and stop boundary. This is especially useful for short bursts of writing: chat replies, note fragments, search prompts, and form fields.
+
+The mouse side button is treated as a first-class trigger. That makes the tool feel closer to a hardware shortcut than a standalone app.
+
+### Local Whisper Instead Of A Cloud API
+
+The default backend is `mlx-whisper`, which runs locally on Apple Silicon. This keeps the project narrow but practical: it is optimized for one environment rather than pretending to be cross-platform before the workflow is stable.
+
+### Rule-Based Cleanup Before LLM Cleanup
+
+Not every text cleanup task needs a large language model. Punctuation, filler-word removal, repeated connector cleanup, and simple Chinese clause boundaries can often be handled by deterministic rules.
+
+This default has three advantages:
+
+- Lower latency for everyday use.
+- More predictable output for small edits.
+- No dependency on LM Studio being open.
+
+Local LLM support is still available when the user wants semantic rewriting, richer structure, or higher-quality polishing.
+
+### Paste Automation Instead Of A Dedicated Editor
+
+The product does not ask the user to write inside VoxPaste. It records, processes, and pastes into the app the user is already using. That is the main workflow bet.
 
 ## Platform
 
@@ -229,6 +269,16 @@ capture intent quickly
 ```
 
 The project is intentionally small. Its value is not in building another full dictation app, but in proving a product hypothesis: for frequent desktop writing, the combination of local AI, hardware-triggered recording, and text post-processing can be more useful than raw transcription alone.
+
+## What This Demonstrates
+
+This project is also a portfolio artifact. It demonstrates:
+
+- Product thinking: identifying where native dictation is not enough for real writing workflows.
+- AI workflow design: combining speech recognition, post-processing, optional LLM cleanup, and paste automation.
+- Practical scoping: choosing macOS Apple Silicon first instead of overextending into every platform.
+- Engineering hygiene: external config, environment checks, helper scripts, public documentation, and a standard license.
+- Iteration: improving punctuation stability and mixed-language usability from actual usage feedback.
 
 ## Demo Story
 
