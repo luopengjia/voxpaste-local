@@ -21,7 +21,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "use_llm_polish": False,
     "sample_rate": 16000,
     "trigger_key": "alt_r",
-    "trigger_mouse_button": "middle",
+    "trigger_mouse_button": "side",
     "language": "zh",
     "hold_threshold_sec": 0.3,
     "paste_delay_sec": 0.1,
@@ -320,6 +320,19 @@ def parse_mouse_button(mouse_module: Any, value: Any) -> Any:
     name = str(value).lower()
     if hasattr(mouse_module.Button, name):
         return getattr(mouse_module.Button, name)
+
+    alias_groups = {
+        "side": ("x1", "unknown", "middle"),
+        "side1": ("x1", "unknown", "middle"),
+        "back": ("x1", "unknown", "middle"),
+        "mouse4": ("x1", "unknown", "middle"),
+        "side2": ("x2", "unknown", "middle"),
+        "forward": ("x2", "unknown", "middle"),
+        "mouse5": ("x2", "unknown", "middle"),
+    }
+    for candidate in alias_groups.get(name, ()):
+        if hasattr(mouse_module.Button, candidate):
+            return getattr(mouse_module.Button, candidate)
     raise ValueError(f"unknown mouse trigger: {value}")
 
 

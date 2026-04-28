@@ -10,7 +10,7 @@ It is designed for people who write a lot in chat tools, notes, browsers, and ed
 
 ## What It Does
 
-- Records while you hold a keyboard key or mouse button.
+- Records while you hold a keyboard key or mouse side button.
 - Transcribes audio with `mlx-whisper` on Apple Silicon.
 - Optionally cleans spoken text with a local LM Studio model.
 - Copies the final text to the clipboard and pastes it into the current cursor.
@@ -61,7 +61,7 @@ Common options:
 | --- | --- | --- |
 | `whisper_model` | MLX Whisper model or local path | `mlx-community/whisper-large-v3-turbo` |
 | `trigger_key` | Keyboard trigger, such as `alt_r`, `f5`, or `f12` | `alt_r` |
-| `trigger_mouse_button` | Mouse trigger, such as `middle`, `x1`, or `x2` | `middle` |
+| `trigger_mouse_button` | Mouse trigger. Supports `side`, `back`, `forward`, `mouse4`, `mouse5`, `middle`, `unknown`, `x1`, `x2` | `side` |
 | `language` | Whisper language hint; use `null` for auto-detect | `zh` |
 | `use_llm_polish` | Whether to call LM Studio for text cleanup | `false` |
 | `lm_studio_url` | LM Studio OpenAI-compatible endpoint | `http://localhost:1234/v1` |
@@ -94,7 +94,7 @@ python voxpaste.py
 
 Then:
 
-1. Hold the trigger key or mouse button.
+1. Hold the trigger key or mouse side button.
 2. Speak.
 3. Release.
 4. The transcript is pasted into the current cursor.
@@ -108,7 +108,7 @@ python scripts/detect_key.py
 python scripts/detect_mouse.py
 ```
 
-They print the `pynput` key/button names recognized by your machine.
+They print the `pynput` key/button names recognized by your machine. On macOS, some side buttons are reported as `unknown` or `middle`; the default `side` alias maps to the best available side-button representation for the current `pynput` backend.
 
 ## Why This Project Exists
 
