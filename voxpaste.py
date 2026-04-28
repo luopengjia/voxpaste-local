@@ -461,6 +461,7 @@ def clean_chinese_speech(text: str) -> str:
     text = remove_chinese_fillers(text)
     text = normalize_chinese_speech_markers(text)
     text = add_chinese_phrase_commas(text)
+    text = add_chinese_clause_commas(text)
     text = add_chinese_sentence_breaks(text)
     text = re.sub(r"[，,]\s*[，,]+", "，", text)
     text = re.sub(r"\s*([，。！？；：])\s*", r"\1", text)
@@ -534,6 +535,22 @@ def add_chinese_phrase_commas(text: str) -> str:
         "最后",
         "同时",
         "比如",
+        "比如说",
+        "以及",
+        "还有",
+        "包括",
+        "尤其是",
+        "特别是",
+        "如果",
+        "虽然",
+        "只要",
+        "并且",
+        "或者",
+        "我觉得",
+        "我认为",
+        "我感觉",
+        "我想",
+        "我们需要",
         "第一",
         "第二",
         "第三",
@@ -542,6 +559,41 @@ def add_chinese_phrase_commas(text: str) -> str:
     )
     for marker in markers:
         text = re.sub(rf"(?<!^)(?<![，。！？；：\n])({marker})", rf"，\1", text)
+    return text
+
+
+def add_chinese_clause_commas(text: str) -> str:
+    temporal_suffixes = (
+        "之后",
+        "以后",
+        "之前",
+        "的时候",
+        "过程中",
+        "过程里",
+    )
+    suffix_group = "|".join(temporal_suffixes)
+    text = re.sub(
+        rf"(?<![，。！？；：\n])({suffix_group})(?=[\u4e00-\u9fff])",
+        r"\1，",
+        text,
+    )
+
+    # Speech transcripts often miss subject shifts, e.g. "没有标点用户看起来就很累".
+    subject_transitions = (
+        "用户",
+        "体验",
+        "效果",
+        "精度",
+        "速度",
+        "成本",
+    )
+    subject_group = "|".join(subject_transitions)
+    predicate_start = r"(?:会|就|是|要|可以|需要|应该|看起来)"
+    text = re.sub(
+        rf"([^，。！？；：\n]{{4,}})({subject_group})(?={predicate_start})",
+        r"\1，\2",
+        text,
+    )
     return text
 
 
